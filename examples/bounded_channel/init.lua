@@ -18,7 +18,9 @@ BoundedChannel.__index = BoundedChannel
 function BoundedChannel.new(max_depth)
   local link = setmetatable({
     _max_depth = max_depth,
-    _wakers = {},
+    _wakers = {
+      sendr = {},
+    },
     _msg_queue = {},
     _closed = false,
   }, BoundedChannel)
@@ -35,21 +37,16 @@ function BoundedChannel:push_back(ele)
   table.insert(self._msg_queue, ele)
 end
 
+function BoundedChannel:set_waker_sendr(t, waker)
+  self._wakers.sendr[t] = waker
+end
+
+
 --- Set one of the wakers for this BoundedChannel
---- @param kind "recvr"|"sendr"
 --- @param waker fun()|nil
-function BoundedChannel:setwaker(kind, waker)
-  self._wakers[kind] = waker
-  if not waker then
-    -- If we are setting this waker to `nil` we
-    -- don't want to call it so we return early
-    return
-  end
-  if kind == "sendr" and self:can_send() then
-    -- Check if sending is currently available, if
-    -- so call the waker to wakeup the yielded sender
-    waker()
-  elseif kind == "recvr" and self:can_recv() then
+function BoundedChannel:set_waker_recvr(waker)
+  self._wakers.recvr = waker
+  if waker and self:can_recv() then
     -- Check if receiving is currently available, if
     -- so call the waker to wake up the yielded receiver
     waker()
@@ -58,8 +55,15 @@ end
 
 --- If `self._wakers[kind]` is not `nil`, call it
 function BoundedChannel:try_wake(kind)
-  if type(self._wakers[kind]) == "function" then
-    self._wakers[kind]()
+  local waker
+  if kind == "sendr" then
+    _, waker = next(self._wakers.sendr)
+    print("try_wake sendr", waker)
+  else
+    waker = self._wakers.recvr
+  end
+  if type(waker) == "function" then
+    waker()
   end
 end
 
